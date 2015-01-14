@@ -81,7 +81,8 @@ type Updater struct {
 	BinURL         string // Base URL for full binary downloads.
 	DiffURL        string // Base URL for diff downloads.
 	Dir            string // Directory to store selfupdate state.
-	CheckInterval  int    // in seconds
+	Handler        func()
+	CheckInterval  int // in seconds
 	Verbose        bool
 	Info           struct {
 		Version string
@@ -188,6 +189,12 @@ func (u *Updater) update() error {
 	}
 
 	u.CurrentVersion = u.Info.Version
+	if u.Handler != nil {
+		if u.Verbose {
+			log.Println("Calling update handler")
+		}
+		u.Handler()
+	}
 
 	return nil
 }
