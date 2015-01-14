@@ -81,6 +81,8 @@ type Updater struct {
 	BinURL         string // Base URL for full binary downloads.
 	DiffURL        string // Base URL for diff downloads.
 	Dir            string // Directory to store selfupdate state.
+	CheckInterval  int    // in seconds
+	Verbose        bool
 	Info           struct {
 		Version string
 		Sha256  []byte
@@ -97,21 +99,32 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 // BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() {
 	os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777)
-	if u.wantUpdate() {
-		if err := up.CanUpdate(); err != nil {
-			// fail
-			return
-		}
-		//self, err := osext.Executable()
-		//if err != nil {
-		// fail update, couldn't figure out path to self
-		//return
-		//}
-		// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
-		if err := u.update(); err != nil {
-			log.Println(err)
-		}
+
+	if u.Verbose {
+		log.Println("Checking for update")
 	}
+	if err := u.update(); err != nil {
+		log.Println(err)
+	}
+	// Setup a check at specified interval
+	ticker := time.NewTicker(time.Duration(u.CheckInterval) * time.Second)
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				if u.Verbose {
+					log.Println("Checking for update")
+				}
+				if err := u.update(); err != nil {
+					log.Println(err)
+				}
+			case <-quit:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
 }
 
 func (u *Updater) wantUpdate() bool {
@@ -139,6 +152,9 @@ func (u *Updater) update() error {
 		return err
 	}
 	if u.Info.Version == u.CurrentVersion {
+		if u.Verbose {
+			log.Println("We're at the latest version")
+		}
 		return nil
 	}
 	bin, err := u.fetchAndVerifyPatch(old)
@@ -170,6 +186,9 @@ func (u *Updater) update() error {
 	if err != nil {
 		return err
 	}
+
+	u.CurrentVersion = u.Info.Version
+
 	return nil
 }
 
